@@ -1,4 +1,4 @@
-# Lab 10 : Détection et Contournement Root avec Frida
+# Lab 11 : Détection et Contournement Root avec Frida
 
 ## Objectif
 Utiliser Frida pour comprendre et neutraliser les systèmes de détection root d'une application Android sécurisée.
