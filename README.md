@@ -1,39 +1,44 @@
-# Rapport de Lab : Contournement de Détection Root avec Frida
+# Lab 10 : Détection et Contournement Root avec Frida
 
 ## Objectif
-L'objectif de ce laboratoire est de comprendre le fonctionnement des mécanismes de sécurité des applications Android (détection de root, anti-debug) et d'utiliser Frida pour les contourner dynamiquement. Le but final est de réussir à exécuter une application sécurisée en neutralisant ses protections à la fois au niveau Java et au niveau natif (C/C++).
+Utiliser Frida pour comprendre et neutraliser les systèmes de détection root d'une application Android sécurisée.
 
-## 1. Déploiement et processus
-Pour commencer, il fallait identifier précisément le processus de notre cible tournant sur l'émulateur. Après avoir lancé le serveur Frida sur l'appareil, l'utilisation de la commande `frida-ps -Uai` m'a permis de lister les applications en cours d'exécution et de repérer le package de l'application Uncrackable.
+## Contexte
+Les applications vérifient si un téléphone est rooté via des vérifications Java et C/C++ (couche native). L'idée est d'intercepter et de modifier ces vérifications au vol pour forcer l'application à démarrer normalement.
 
-![Liste des applications avec Frida](screenshots/1_frida_apps_list.png)
+## Étapes essentielles
 
-## 2. Contournement au niveau Java
-La première ligne de défense de l'application repose sur des appels Java (vérification du `Build.TAGS`, recherche des binaires `su` et `busybox`, etc.). J'ai rédigé un script JavaScript (`bypass_root.js`) pour "hooker" ces appels système.
+### 1. Installation et preuve
+- **Explication :** Vérification des outils nécessaires (Frida, ADB) sur la machine.
+- **Action réalisée :** Exécution des commandes pour vérifier la version de Frida et s'assurer que le téléphone virtuel est bien détecté par ADB.
+- **Capture associée :**
+![Vérification des outils](screenshots/1_frida_apps_list.png)
 
-Lors de l'injection, les logs de Frida confirment que les accès aux fichiers suspects ont bien été interceptés et bloqués au niveau Java. Cependant, on remarque que l'application finit tout de même par crasher, ce qui indique la présence d'une sécurité supplémentaire sous-jacente.
+### 2. Déploiement et visibilité
+- **Explication :** Lancement du serveur Frida sur l'appareil Android et test de connexion.
+- **Action réalisée :** Lancement de `frida-server` en arrière-plan et utilisation de `frida-ps -Uai` pour lister au moins 3 applications en cours (dont notre cible Uncrackable).
+- **Capture associée :**
+![Liste des applications cibles](screenshots/2_java_bypass_part1.png)
 
-![Bypass Java - Partie 1](screenshots/2_java_bypass_part1.png)
-![Bypass Java - Partie 2](screenshots/3_java_bypass_part2.png)
+### 3. Bypass Java
+- **Explication :** Contournement des vérifications de sécurité au niveau Java (ex: détection de `su`, `busybox`, `Build.TAGS`).
+- **Action réalisée :** Injection du script `bypass_root.js`. Les logs confirment le blocage des vérifications Java (`[+] File.exists bypass`), même si l'application déclenche ensuite une autre sécurité.
+- **Captures associées :**
+![Bypass Java Logs](screenshots/3_java_bypass_part2.png)
+![Résultat Bypass Java](screenshots/4_frida_trace_part1.png)
 
-## 3. Analyse de la sécurité native
-Pour comprendre pourquoi l'application crashe malgré le bypass Java, j'ai utilisé l'outil `frida-trace`. Cet outil a permis d'intercepter les appels système de bas niveau (C/C++) en arrière-plan.
+### 4. Natif/Trace
+- **Explication :** Détection et blocage des appels systèmes bas niveau (C/C++) utilisés par l'application pour chercher les traces de root.
+- **Action réalisée :** Lancement de `frida-trace` pour identifier les appels (`open`, `access`, `stat`), puis exécution des scripts `bypass_native.js` et `anti_frida.js` pour bloquer ces accès (`[+] Blocked...`).
+- **Captures associées :**
+![Trace des appels natifs](screenshots/5_frida_trace_part2.png)
+![Logs Blocked et anti-frida](screenshots/6_frida_trace_part3.png)
+![Résultat Final Trace](screenshots/7_frida_trace_part4.png)
 
-L'analyse de ces traces révèle que la bibliothèque native de l'application appelle activement des fonctions telles que `open`, `access` et `stat` pour vérifier l'état du système et détecter la présence de Frida ou du root.
+## Résultat final
+En lançant l'application avec la combinaison complète des scripts de contournement (`bypass_root.js`, `bypass_native.js`, et `anti_frida.js`), toutes les couches de sécurité sont vaincues simultanément. L'application s'exécute normalement de manière stable sans détecter le root ou notre outil d'analyse.
 
-![Trace des appels natifs 1](screenshots/4_frida_trace_part1.png)
-![Trace des appels natifs 2](screenshots/5_frida_trace_part2.png)
-![Trace des appels natifs 3](screenshots/6_frida_trace_part3.png)
-![Trace des appels natifs 4](screenshots/7_frida_trace_part4.png)
-
-## 4. Contournement final (Natif et Anti-Frida)
-Pour vaincre complètement la sécurité, j'ai implémenté deux autres scripts :
-- `bypass_native.js` : pour neutraliser les appels natifs identifiés lors du traçage.
-- `anti_frida.js` : pour empêcher l'application de détecter la présence du serveur Frida en mémoire ou sur les ports réseau.
-
-L'exécution combinée des trois scripts montre le succès total de l'opération : toutes les couches de vérification sont bloquées, et l'application s'ouvre finalement de manière stable.
-
-![Succès du Bypass Final](screenshots/8_final_bypass_success.png)
+![Application ouverte et fonctionnelle](screenshots/8_final_bypass_success.png)
 
 ## Conclusion
-Ce lab démontre l'efficacité de l'instrumentation dynamique pour analyser et manipuler le comportement d'une application sécurisée en temps réel. Il prouve également qu'une sécurité purement côté client, même hybride (Java et C/C++), peut être méthodiquement identifiée et neutralisée avec les bons outils de traçage et de hooking.
+Ce lab prouve que la sécurité côté client n'est jamais absolue. Même lorsqu'une application croise des vérifications hybrides (Java + Natif), un outil d'instrumentation dynamique tel que Frida permet de manipuler la mémoire et de modifier les réponses du système en temps réel, rendant les défenses inefficaces.
