@@ -1,47 +1,39 @@
-# Lab_10_MobileSecurity
+# Rapport de Lab : Contournement de Détection Root avec Frida
 
 ## Objectif
 L'objectif de ce laboratoire est de comprendre le fonctionnement des mécanismes de sécurité des applications Android (détection de root, anti-debug) et d'utiliser Frida pour les contourner dynamiquement. Le but final est de réussir à exécuter une application sécurisée en neutralisant ses protections à la fois au niveau Java et au niveau natif (C/C++).
 
-## 1. Préparation et environnement
-Pour commencer, il fallait s'assurer de la bonne communication entre la machine hôte et l'émulateur. J'ai d'abord vérifié les versions des outils et la connectivité ADB.
+## 1. Déploiement et processus
+Pour commencer, il fallait identifier précisément le processus de notre cible tournant sur l'émulateur. Après avoir lancé le serveur Frida sur l'appareil, l'utilisation de la commande `frida-ps -Uai` m'a permis de lister les applications en cours d'exécution et de repérer le package de l'application Uncrackable.
 
-![Vérification des prérequis](screenshots/1_pre_requisites.png)
-
-Ensuite, j'ai déployé et lancé `frida-server` sur l'appareil. La commande `frida-ps -Uai` m'a permis de lister les processus en cours et de cibler l'application à analyser (Uncrackable).
-
-![Lancement du serveur Frida](screenshots/2_frida_server.png)
+![Liste des applications avec Frida](screenshots/1_frida_apps_list.png)
 
 ## 2. Contournement au niveau Java
-La première ligne de défense de l'application repose sur des appels Java (vérification du `Build.TAGS`, recherche des binaires `su` et `busybox`, etc.). J'ai donc rédigé un script JavaScript (`bypass_root.js`) pour "hooker" ces appels système.
+La première ligne de défense de l'application repose sur des appels Java (vérification du `Build.TAGS`, recherche des binaires `su` et `busybox`, etc.). J'ai rédigé un script JavaScript (`bypass_root.js`) pour "hooker" ces appels système.
 
-Lors du lancement de Frida avec ce script, les logs confirment que les accès aux fichiers suspects ont bien été interceptés et bloqués, renvoyant de fausses informations à l'application.
+Lors de l'injection, les logs de Frida confirment que les accès aux fichiers suspects ont bien été interceptés et bloqués au niveau Java. Cependant, on remarque que l'application finit tout de même par crasher, ce qui indique la présence d'une sécurité supplémentaire sous-jacente.
 
-![Succès du bypass Java](screenshots/3_java_bypass.png)
+![Bypass Java - Partie 1](screenshots/2_java_bypass_part1.png)
+![Bypass Java - Partie 2](screenshots/3_java_bypass_part2.png)
 
 ## 3. Analyse de la sécurité native
-Malgré le contournement Java, l'application crashe à cause d'une sécurité supplémentaire intégrée dans sa bibliothèque native (C/C++). Pour comprendre ce qui déclenche le crash, j'ai utilisé l'outil `frida-trace`.
+Pour comprendre pourquoi l'application crashe malgré le bypass Java, j'ai utilisé l'outil `frida-trace`. Cet outil a permis d'intercepter les appels système de bas niveau (C/C++) en arrière-plan.
 
-Cet outil a permis d'intercepter les appels système de bas niveau (comme `open`, `openat`, `access`) et de voir précisément quels fichiers l'application cherchait à lire en arrière-plan.
+L'analyse de ces traces révèle que la bibliothèque native de l'application appelle activement des fonctions telles que `open`, `access` et `stat` pour vérifier l'état du système et détecter la présence de Frida ou du root.
 
-![Trace des appels natifs](screenshots/4_native_trace.png)
-
-![Détails des appels bloqués](screenshots/5_native_blocked.png)
+![Trace des appels natifs 1](screenshots/4_frida_trace_part1.png)
+![Trace des appels natifs 2](screenshots/5_frida_trace_part2.png)
+![Trace des appels natifs 3](screenshots/6_frida_trace_part3.png)
+![Trace des appels natifs 4](screenshots/7_frida_trace_part4.png)
 
 ## 4. Contournement final (Natif et Anti-Frida)
 Pour vaincre complètement la sécurité, j'ai implémenté deux autres scripts :
-- `bypass_native.js` : pour neutraliser les appels natifs identifiés lors de l'analyse précédente.
-- `anti_frida.js` : pour empêcher l'application de détecter la présence même de Frida en mémoire ou sur les ports réseau.
+- `bypass_native.js` : pour neutraliser les appels natifs identifiés lors du traçage.
+- `anti_frida.js` : pour empêcher l'application de détecter la présence du serveur Frida en mémoire ou sur les ports réseau.
 
-L'exécution combinée des trois scripts montre le succès total de l'opération : l'ensemble des vérifications sont bloquées, et l'application reste stable sans détecter le root ni l'instrumentation.
+L'exécution combinée des trois scripts montre le succès total de l'opération : toutes les couches de vérification sont bloquées, et l'application s'ouvre finalement de manière stable.
 
-![Script Anti-Frida en exécution](screenshots/6_anti_frida.png)
-
-![Résultat final dans le terminal](screenshots/7_final_result.png)
-
-L'application s'ouvre enfin normalement sur l'émulateur.
-
-![Application fonctionnelle sur l'appareil](screenshots/8_app_screen.png)
+![Succès du Bypass Final](screenshots/8_final_bypass_success.png)
 
 ## Conclusion
-Ce lab montre l'efficacité de l'instrumentation dynamique pour analyser et altérer le comportement des applications en temps réel. Il met également en évidence qu'une sécurité uniquement basée sur le côté client n'est pas infaillible, qu'elle soit implémentée en Java ou au niveau natif.
+Ce lab démontre l'efficacité de l'instrumentation dynamique pour analyser et manipuler le comportement d'une application sécurisée en temps réel. Il prouve également qu'une sécurité purement côté client, même hybride (Java et C/C++), peut être méthodiquement identifiée et neutralisée avec les bons outils de traçage et de hooking.
